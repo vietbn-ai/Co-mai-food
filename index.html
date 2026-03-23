@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script id="tailwind-config">
         tailwind.config = {
           darkMode: "class",
@@ -97,6 +98,49 @@
         }
         .bg-gradient-primary {
             background: linear-gradient(135deg, #ff915c 0%, #ff752b 100%);
+        }
+        @keyframes typingBounce {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-4px); }
+        }
+        @keyframes spinIcon {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin-icon {
+            animation: spinIcon 0.5s ease-in-out;
+        }
+        .chat-markdown p {
+            line-height: 1.6;
+            margin-bottom: 0.5rem;
+        }
+        .chat-markdown p:last-child {
+            margin-bottom: 0;
+        }
+        .chat-markdown ul {
+            list-style-type: disc;
+            margin-left: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .chat-markdown li {
+            margin-bottom: 0.25rem;
+        }
+        .chat-markdown strong {
+            font-weight: bold;
+            color: #ff915c;
+        }
+        .chat-markdown code {
+            background-color: #262626;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            padding: 0.1rem 0.3rem;
+            border-radius: 0.25rem;
+            font-size: 0.9em;
+        }
+        .chat-markdown blockquote {
+            border-left: 4px solid #484847;
+            padding-left: 1rem;
+            color: #adaaaa;
+            margin: 0.5rem 0;
         }
     </style>
 </head>
@@ -420,4 +464,212 @@
 </div>
 </footer>
 </div>
+
+<!-- Floating Chatbot UI -->
+<div id="chatbot-container" class="fixed bottom-6 right-6 z-[100] flex flex-col items-end">
+    <!-- Chat Window -->
+    <div id="chat-window" class="hidden glass-panel ghost-border rounded-2xl w-80 md:w-96 mb-4 flex-col overflow-hidden shadow-2xl origin-bottom-right transition-all duration-300">
+        <!-- Header -->
+        <div class="flex items-center justify-between px-4 py-3 bg-surface-container/80 border-b border-outline-variant/30">
+            <div class="flex items-center gap-2">
+                <div class="relative">
+                    <span class="material-symbols-outlined text-primary">smart_toy</span>
+                    <span class="absolute bottom-0 right-0 size-2.5 bg-green-500 rounded-full border border-surface animate-pulse"></span>
+                </div>
+                <span class="font-headline font-bold text-on-background">Trợ Lý Ảo CMF</span>
+            </div>
+            <div class="flex items-center gap-1">
+                <button id="chat-refresh-btn" class="text-secondary hover:text-primary transition-colors p-1 rounded-full hover:bg-surface-container-highest flex items-center justify-center">
+                    <span class="material-symbols-outlined" style="font-size: 20px;">refresh</span>
+                </button>
+                <button id="chat-close-btn" class="text-secondary hover:text-primary transition-colors p-1 rounded-full hover:bg-surface-container-highest flex items-center justify-center">
+                    <span class="material-symbols-outlined" style="font-size: 20px;">close</span>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Messages Area -->
+        <div id="chat-messages" class="flex-1 p-4 overflow-y-auto max-h-96 min-h-64 flex flex-col gap-3 font-body text-sm text-on-background">
+            <!-- Initial Message will be injected by JS -->
+        </div>
+        
+        <!-- Input Area -->
+        <div class="p-3 bg-surface-container-highest border-t border-outline-variant/30 flex items-center gap-2">
+            <input id="chat-input" type="text" placeholder="Nhập câu hỏi..." class="flex-1 bg-surface-container-lowest border border-outline-variant/30 rounded-xl px-3 py-2 text-on-background focus:outline-none focus:border-primary text-sm" />
+            <button id="chat-send-btn" class="bg-gradient-primary text-on-primary-fixed rounded-xl size-9 flex items-center justify-center transition-transform hover:scale-105 shrink-0">
+                <span class="material-symbols-outlined" style="font-size: 20px;">send</span>
+            </button>
+        </div>
+    </div>
+    
+    <!-- Floating Button -->
+    <button id="chat-toggle-btn" class="bg-gradient-primary text-on-primary-fixed rounded-full size-14 shadow-[0_10px_25px_rgba(255,145,92,0.4)] flex items-center justify-center transition-transform hover:scale-105 active:scale-95 border-2 border-surface">
+        <span class="material-symbols-outlined action-icon transition-opacity duration-300">chat</span>
+        <span class="material-symbols-outlined close-icon absolute opacity-0 transition-opacity duration-300">expand_more</span>
+    </button>
+</div>
+
+<!-- Chatbot Logic -->
+<script>
+    document.addEventListener("DOMContentLoaded", async () => {
+        const toggleBtn = document.getElementById('chat-toggle-btn');
+        const chatWindow = document.getElementById('chat-window');
+        const closeBtn = document.getElementById('chat-close-btn');
+        const refreshBtn = document.getElementById('chat-refresh-btn');
+        const chatMessages = document.getElementById('chat-messages');
+        const chatInput = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('chat-send-btn');
+        
+        let knowledgeBase = "";
+        try {
+            const response = await fetch("./chatbot_data.txt");
+            if (response.ok) {
+                knowledgeBase = await response.text();
+            } else {
+                console.error("Không tải được cơ sở dữ liệu cho chatbot!");
+            }
+        } catch(e) {
+            console.error("Lỗi khi tải chatbot_data: ", e);
+        }
+
+        const SYSTEM_PROMPT = `Bạn là AI trợ lý cá nhân độc quyền trên website của chuyên gia Nguyễn Văn A. 
+Nhiệm vụ của bạn là hỗ trợ khách truy cập lịch sự, cung cấp thông tin chính xác về các dịch vụ, khóa học, và dự án của chuyên gia này.
+
+Dưới đây là cơ sở dữ liệu kiến thức (Knowledge Base) của bạn:
+${knowledgeBase}
+
+Quy tắc giao tiếp bắt buộc:
+1. Luôn chào hỏi thân thiện và kết thúc bằng cách mời họ đặt thêm câu hỏi.
+2. Bạn phải định dạng các câu trả lời của mình bằng Markdown đầy đủ (in đậm ý chính, dùng gạch đầu dòng, tạo code block nếu cần).
+3. Nếu người dùng hỏi điều gì ngoài phạm vi dữ liệu trên, hãy tế nhị từ chối và hướng dẫn họ gửi email hoặc nhắn tin Zalo trực tiếp cho chuyên gia. 
+4. Không được phép bịa đặt thông tin ngoài cơ sở dữ liệu đã cấp.`;
+        
+        let conversationHistory = [
+            { role: "system", content: SYSTEM_PROMPT }
+        ];
+
+        const initialGreetingMessage = "Chào bạn! Tôi là trợ lý ảo của Cô Mai Food và Nguyễn Văn A. Bạn cần hỗ trợ thông tin gì về dịch vụ, khóa học hay báo giá ạ?";
+
+        function toggleChat() {
+            chatWindow.classList.toggle('hidden');
+            chatWindow.classList.toggle('flex');
+            
+            const actionIcon = toggleBtn.querySelector('.action-icon');
+            const toggleCloseIcon = toggleBtn.querySelector('.close-icon');
+            
+            if (chatWindow.classList.contains('hidden')) {
+                actionIcon.classList.remove('opacity-0');
+                toggleCloseIcon.classList.add('opacity-0');
+            } else {
+                actionIcon.classList.add('opacity-0');
+                toggleCloseIcon.classList.remove('opacity-0');
+                if(chatMessages.children.length === 0) {
+                    initChat();
+                }
+                setTimeout(() => chatInput.focus(), 100);
+            }
+        }
+
+        function initChat() {
+            chatMessages.innerHTML = '';
+            conversationHistory = [{ role: "system", content: SYSTEM_PROMPT }];
+            addMessageToChat('assistant', initialGreetingMessage);
+            conversationHistory.push({ role: "assistant", content: initialGreetingMessage });
+        }
+
+        toggleBtn.addEventListener('click', toggleChat);
+        closeBtn.addEventListener('click', toggleChat);
+        
+        refreshBtn.addEventListener('click', () => {
+            const icon = refreshBtn.querySelector('span');
+            icon.classList.add('animate-spin-icon');
+            chatMessages.innerHTML = '';
+            initChat();
+            setTimeout(() => {
+                icon.classList.remove('animate-spin-icon');
+            }, 500);
+        });
+
+        function addMessageToChat(role, text) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `max-w-[85%] rounded-2xl px-4 py-2 flex flex-col ${role === 'user' ? 'bg-primary text-on-primary-fixed self-end' : 'bg-surface-container-high text-on-background self-start ghost-border chat-markdown'}`;
+            if(role === 'assistant') {
+                msgDiv.innerHTML = marked.parse(text);
+            } else {
+                msgDiv.innerText = text;
+            }
+            chatMessages.appendChild(msgDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function showTypingIndicator() {
+            const typingDiv = document.createElement('div');
+            typingDiv.id = 'typing-indicator';
+            typingDiv.className = 'max-w-[85%] rounded-2xl px-4 py-3 bg-surface-container-high text-secondary self-start ghost-border flex items-center gap-2';
+            typingDiv.innerHTML = `
+                <span class="text-xs">Đang nhập</span>
+                <div class="flex gap-1 mt-1">
+                    <div class="w-1.5 h-1.5 rounded-full bg-secondary" style="animation: typingBounce 1s infinite 0s"></div>
+                    <div class="w-1.5 h-1.5 rounded-full bg-secondary" style="animation: typingBounce 1s infinite 0.2s"></div>
+                    <div class="w-1.5 h-1.5 rounded-full bg-secondary" style="animation: typingBounce 1s infinite 0.4s"></div>
+                </div>
+            `;
+            chatMessages.appendChild(typingDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function removeTypingIndicator() {
+            const typingDiv = document.getElementById('typing-indicator');
+            if (typingDiv) {
+                typingDiv.remove();
+            }
+        }
+
+        async function handleSend() {
+            const text = chatInput.value.trim();
+            if (!text) return;
+            
+            chatInput.value = '';
+            addMessageToChat('user', text);
+            conversationHistory.push({ role: "user", content: text });
+            
+            showTypingIndicator();
+            
+            try {
+                const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": "Bearer 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",
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        model: "z-ai/glm-4.5-air:free",
+                        messages: conversationHistory
+                    })
+                });
+                const data = await res.json();
+                removeTypingIndicator();
+                
+                if(data && data.choices && data.choices.length > 0) {
+                    const aiText = data.choices[0].message.content;
+                    addMessageToChat('assistant', aiText);
+                    conversationHistory.push({ role: "assistant", content: aiText });
+                } else {
+                    addMessageToChat('assistant', "Xin lỗi, tôi đang gặp lỗi kết nối. Hãy thử lại sau nhé!");
+                }
+            } catch(e) {
+                removeTypingIndicator();
+                addMessageToChat('assistant', "Rất tiếc, đã có lỗi mạng kết nối.");
+                console.error(e);
+            }
+        }
+
+        sendBtn.addEventListener('click', handleSend);
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleSend();
+            }
+        });
+    });
+</script>
 </body></html>
