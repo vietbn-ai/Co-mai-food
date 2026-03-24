@@ -510,7 +510,15 @@
 </div>
 
 <!-- Chatbot Logic -->
-<script>
+<script type="module">
+    import OpenAI from 'https://esm.sh/openai';
+
+    const openai = new OpenAI({
+        apiKey: "sk-4bd27113b7dc78d1-lh6jld-f4f9c69f",
+        baseURL: "https://9router.vuhai.io.vn/v1",
+        dangerouslyAllowBrowser: true
+    });
+
     document.addEventListener("DOMContentLoaded", async () => {
         const toggleBtn = document.getElementById('chat-toggle-btn');
         const chatWindow = document.getElementById('chat-window');
@@ -636,22 +644,15 @@ Quy tắc giao tiếp bắt buộc:
             showTypingIndicator();
             
             try {
-                const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-                    method: "POST",
-                    headers: {
-                        "Authorization": "Bearer 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",
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
-                        model: "z-ai/glm-4.5-air:free",
-                        messages: conversationHistory
-                    })
+                const response = await openai.chat.completions.create({
+                    model: "ces-chatbot-gpt-5.4",
+                    messages: conversationHistory
                 });
-                const data = await res.json();
+                
                 removeTypingIndicator();
                 
-                if(data && data.choices && data.choices.length > 0) {
-                    const aiText = data.choices[0].message.content;
+                if(response && response.choices && response.choices.length > 0) {
+                    const aiText = response.choices[0].message.content;
                     addMessageToChat('assistant', aiText);
                     conversationHistory.push({ role: "assistant", content: aiText });
                 } else {
@@ -659,7 +660,7 @@ Quy tắc giao tiếp bắt buộc:
                 }
             } catch(e) {
                 removeTypingIndicator();
-                addMessageToChat('assistant', "Rất tiếc, đã có lỗi mạng kết nối.");
+                addMessageToChat('assistant', "Rất tiếc, đã có lỗi mạng kết nối hoặc cấu hình API.");
                 console.error(e);
             }
         }
